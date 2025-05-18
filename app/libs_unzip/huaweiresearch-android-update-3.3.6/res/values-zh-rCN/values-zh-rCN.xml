@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="msg_6100">获取apk的路径出错</string>
+    <string name="msg_6101">apk下载完成，安装失败</string>
+    <string name="msg_6102">新版本下载路径错误</string>
+    <string name="msg_6103">下载APK至本地出错</string>
+    <string name="msg_6104">未获取到APK升级相关权限</string>
+    <string name="msg_6105">未知异常</string>
+    <string name="msg_6106">APK更新任务正在执行</string>
+    <string name="msg_6107">当前无网络</string>
+    <string name="msg_6108">无WIFI网络</string>
+    <string name="msg_6109">获取最新版本出错</string>
+    <string name="update_connecting_service">正在连接服务器…</string>
+    <string name="update_download_complete">下载完成，请点击安装</string>
+    <string name="update_lab_background_update">后台更新</string>
+    <string name="update_lab_downloading">正在下载：</string>
+    <string name="update_lab_ignore">忽略此版本</string>
+    <string name="update_lab_install">安装</string>
+    <string name="update_lab_new_version_size">新版本大小：</string>
+    <string name="update_lab_ready_update">是否升级到%s版本？</string>
+    <string name="update_lab_update">升级</string>
+    <string name="update_start_download">开始下载</string>
+</resources>

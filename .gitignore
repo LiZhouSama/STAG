@@ -1,0 +1,96 @@
+# 规则1：默认忽略所有内容
+*
+
+# 规则2：但是，不要忽略目录本身。这允许我们稍后取消忽略特定文件或目录下的内容。
+!*/
+
+# 规则3：保留 .gitignore 文件自身
+!.gitignore
+
+# 规则4：保留 app/src/main/java/com/example/stag/ 目录下的所有文件和子目录内容
+# (注意: 这需要该路径下的父目录通过规则2不被忽略)
+!app/src/main/java/com/example/stag/**
+
+# 规则5：保留所有 .xml 文件 (例如布局文件、AndroidManifest.xml, values下的xml等)
+!*.xml
+
+# 规则6：保留所有 .gradle 构建脚本文件 (例如 build.gradle, settings.gradle)
+!*.gradle
+
+# 规则7：保留 Gradle Wrapper 的必要文件 (这些对于其他人构建项目至关重要)
+!gradlew
+!gradlew.bat
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Built application files
+*.apk
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration files (sdk path, etc)
+local.properties
+
+# Log files
+*.log
+
+# Android Studio Navigation editor files
+.idea/navEditor.xml
+
+# Android Studio configuration files
+.idea/libraries/
+.idea/misc.xml
+.idea/modules.xml
+.idea/runConfigurations/
+.idea/vcs.xml
+.idea/workspace.xml
+.idea/assetWizardSettings.xml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+# IntelliJ
+*.iml
+*.ipr
+*.iws
+
+# Mac Files
+.DS_Store
+*.iml
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# C/C++ history files
+.cxx/
+
+# Captures directory from Android Studio
+captures/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Custom rules
+hide/
+*.txt
+*.py

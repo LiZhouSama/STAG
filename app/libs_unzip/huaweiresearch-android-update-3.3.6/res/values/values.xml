@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="update_default_theme_color">#FFE94339</color>
+    <string name="msg_6100">Error getting path of apk</string>
+    <string name="msg_6101">apk download completed, installation failed</string>
+    <string name="msg_6102">New version download path error</string>
+    <string name="msg_6103">Save apk to local failed</string>
+    <string name="msg_6104">Failed to obtain APK upgrade related permissions</string>
+    <string name="msg_6105">Unkown error</string>
+    <string name="msg_6106">APK update task is being executed</string>
+    <string name="msg_6107">No network</string>
+    <string name="msg_6108">No WIFI network</string>
+    <string name="msg_6109">Error getting latest version</string>
+    <string name="update_connecting_service">Connecting the server…</string>
+    <string name="update_download_complete">Download to complete, please click Install</string>
+    <string name="update_lab_background_update">Background Upgrade</string>
+    <string name="update_lab_downloading">Downloading：</string>
+    <string name="update_lab_ignore">Ignore</string>
+    <string name="update_lab_install">Install</string>
+    <string name="update_lab_new_version_size">New version size:</string>
+    <string name="update_lab_ready_update">Whether to upgrade to version %s?</string>
+    <string name="update_lab_update">Upgrade</string>
+    <string name="update_start_download">Start download</string>
+    <style name="Update_Dialog" parent="@android:style/Theme.Dialog">
+        <!-- Dialog的windowFrame框为无 -->
+        <item name="android:windowFrame">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <!-- 是否漂现在activity上 -->
+        <item name="android:windowIsFloating">true</item>
+        <!-- 是否半透明 -->
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowSoftInputMode">adjustPan</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowEnterAnimation">@anim/update_app_window_in</item>
+        <item name="android:windowExitAnimation">@anim/update_app_window_out</item>
+    </style>
+    <style name="Update_Fragment_Dialog" parent="android:style/Theme.Dialog">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="android:windowEnterAnimation">@anim/update_app_window_in</item>
+        <item name="android:windowExitAnimation">@anim/update_app_window_out</item>
+    </style>
+    <style name="Update_ProgressBar_Red">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="progress_max">100</item>
+        <item name="progress_current">0</item>
+        <item name="progress_unreached_color">#CCCCCC</item>
+        <item name="progress_reached_color">#e94339</item>
+        <item name="progress_text_size">12sp</item>
+        <item name="progress_text_color">#e94339</item>
+        <item name="progress_reached_bar_height">4dp</item>
+        <item name="progress_unreached_bar_height">3dp</item>
+    </style>
+    <declare-styleable name="Update_ProgressBar">
+        <attr format="integer" name="progress_current"/>
+        <attr format="integer" name="progress_max"/>
+
+        <attr format="color" name="progress_unreached_color"/>
+        <attr format="color" name="progress_reached_color"/>
+
+        <attr format="dimension" name="progress_reached_bar_height"/>
+        <attr format="dimension" name="progress_unreached_bar_height"/>
+
+        <attr format="dimension" name="progress_text_size"/>
+        <attr format="color" name="progress_text_color"/>
+
+        <attr format="dimension" name="progress_text_offset"/>
+
+        <attr format="enum" name="hiresearch_progress_text_visibility">
+            <enum name="visible" value="0"/>
+            <enum name="invisible" value="1"/>
+        </attr>
+    </declare-styleable>
+</resources>

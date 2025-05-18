@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="msg_4401">HiResearch authentication refresh failed</string>
+    <string name="msg_5100">Upload metadata cannot be empty, please pass in \'metadata \'correctly</string>
+    <string name="msg_5101">The \'HiResearchMetadata\' annotation was not added to the uploaded attachment object type</string>
+    <string name="msg_5102">Missing metadata field</string>
+    <string name="msg_5103">Attachment not configured in metadata</string>
+    <string name="msg_5104">Specified attachment does not exist</string>
+    <string name="msg_5105">The number of attachments exceeds the maximum allowed number</string>
+    <string name="url_beta">https://huaweiresearch-kit.hwcloudtest.cn/</string>
+    <string name="url_production">https://researchkit-drcn.things.dbankcloud.cn/</string>
+</resources>

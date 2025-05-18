@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="msg_4401">HiResearch鉴权刷新失败</string>
+    <string name="msg_5100">上传元数据不能为空，请正确传入\'metadata\'</string>
+    <string name="msg_5101">元数据名称或版本号配置不正确，您可以在实体类上添加\'HiResearchMetadata\'注解配置元数据名称及版本号</string>
+    <string name="msg_5102">元数据字段缺失</string>
+    <string name="msg_5103">元数据中未配置附件</string>
+    <string name="msg_5104">指定附件不存在</string>
+    <string name="msg_5105">附件数量超过最大允许个数</string>
+    <string name="url_beta"> https://hiresearch-beta-api.cbg-app.huawei.com/</string>
+    <string name="url_production">https://researchkit-drcn.things.dbankcloud.cn/</string>
+</resources>

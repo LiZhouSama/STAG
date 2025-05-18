@@ -1,0 +1,39 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven { url = uri("https://developer.huawei.com/repo/") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/huaweicloudsdk/") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/repositories/google") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/groups/public") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/repositories/jcenter") }
+        maven { url = uri("https://plugins.gradle.org/m2/") }
+        flatDir {
+            dirs 'src/main/libs'
+        }
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://developer.huawei.com/repo/") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/huaweicloudsdk/") }
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/repositories/google") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/groups/public") }
+        maven { url = uri("https://maven.aliyun.com/nexus/content/repositories/jcenter") }
+        maven { url = uri("https://plugins.gradle.org/m2/") }
+        // flatDir for local .aar files should be declared in the app-level build.gradle
+        // or if you want it project-wide (less common for flatDir):
+        // flatDir {
+        //     dirs((projectDir.toString() + "/app/libs")) // Adjust path if .aar are elsewhere
+        // }
+    }
+}
+
+rootProject.name = "StagApp" // Or your actual project name
+include(":app")

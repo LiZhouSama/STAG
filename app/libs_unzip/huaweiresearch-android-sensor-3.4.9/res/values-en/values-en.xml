@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="abc_action_bar_home_description_format">%1$s, %2$s</string>
+    <string name="abc_action_bar_home_subtitle_description_format">%1$s, %2$s, %3$s</string>
+    <string name="msg_6701">Error getting function method</string>
+    <string name="msg_6702">Error calling function method</string>
+    <string name="msg_6703">Please set the sample id via KitDataSample annotation</string>
+</resources>
