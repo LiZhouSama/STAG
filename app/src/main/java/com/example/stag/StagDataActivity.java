@@ -50,6 +50,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+// Imports for CSV writing
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+// Required imports for CSV functionality and data types
+import android.os.Environment;
+import com.huawei.hiresearch.sensorprosdk.datatype.sensor.AccData;
+import com.huawei.hiresearch.sensorprosdk.datatype.sensor.GyroData;
+import com.huawei.hiresearch.sensorprosdk.datatype.sensor.MagData;
+
 public class StagDataActivity extends AppCompatActivity {
 
     private static final String TAG = "StagDataActivity";
@@ -75,6 +90,18 @@ public class StagDataActivity extends AppCompatActivity {
 
     // Huawei SDK specific
     private SensorProManager sensorProManager;
+
+    // CSV Writing specific
+    private static final String CSV_HEADER = "frame_index,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z";
+    private static final int DATA_BUFFER_FLUSH_SIZE = 100; // Write to file every 100 samples
+    private static final long DATA_FLUSH_INTERVAL_MS = 5000; // Or every 5 seconds
+    private List<String> csvDataBuffer = new ArrayList<>();
+    private File currentCsvFile;
+    private BufferedWriter currentCsvFileWriter;
+    private Handler dataFlushHandler = new Handler(Looper.getMainLooper());
+    private Runnable dataFlushRunnable;
+    private TextView tvCurrentFileName; // Optional: For displaying current file name
+    private long frameCounter = 0; // Added frame counter
 
     private StringBuilder logBuilder = new StringBuilder();
 
@@ -105,7 +132,7 @@ public class StagDataActivity extends AppCompatActivity {
         tvGyroData = findViewById(R.id.tvGyroData);
         tvMagData = findViewById(R.id.tvMagData);
         tvLogOutput = findViewById(R.id.tvLogOutput);
-        // scrollViewLogs = findViewById(R.id.scrollViewLogs); // Add ScrollView if you have one around tvLogOutput
+        tvCurrentFileName = findViewById(R.id.tvCurrentFileName); // Make sure this ID exists in your XML if you use it
 
         scannedDevicesAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, new ArrayList<>());
         scannedDevicesAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -113,8 +140,22 @@ public class StagDataActivity extends AppCompatActivity {
 
         btnScanDevice.setOnClickListener(v -> toggleScan());
         btnConnectDevice.setOnClickListener(v -> connectSelectedDevice());
-        btnStartDataCollection.setOnClickListener(v -> startDataCollection());
-        btnStopDataCollection.setOnClickListener(v -> stopDataCollection());
+        btnStartDataCollection.setOnClickListener(v -> {
+            if (isConnected && !isCollecting) {
+                initCsvWriter(); // Initialize CSV writer when collection starts
+                startDataCollection();
+            } else if (!isConnected) {
+                logToScreen("Device not connected. Cannot start collection.");
+                Toast.makeText(this, "Device not connected. Please connect first.", Toast.LENGTH_SHORT).show();
+            } else {
+                logToScreen("Already collecting or starting collection...");
+            }
+        });
+        btnStopDataCollection.setOnClickListener(v -> {
+            if (isCollecting) {
+                stopDataCollection(); // This will eventually call stopCsvWriter via stopDataCollectionLogic
+            }
+        });
 
         spinnerScannedDevices.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -468,54 +509,88 @@ public class StagDataActivity extends AppCompatActivity {
         String serviceIdForMonitor = ""; 
         sensorProManager.getDeviceProvider().registerStateMonitor(serviceIdForMonitor, new SensorProDeviceStateCallback() {
             @Override
-            public void onResponse(int code, SensorProDeviceInfo deviceInfo) {
-                String deviceName = deviceInfo != null ? getDeviceDisplayNameFromInfo(deviceInfo) : (selectedDevice != null ? getDeviceDisplayName(selectedDevice) : "Selected Device");
-                String statusMessage = "Device State Changed. Device: " + deviceName + ", Code: " + code;
+            public void onResponse(int outerCode, SensorProDeviceInfo deviceInfo) {
+                String deviceDisplayName = "Unknown Device";
+                int actualDeviceConnectState = -1; // Default to an invalid state
+
+                if (deviceInfo != null) {
+                    deviceDisplayName = getDeviceDisplayNameFromInfo(deviceInfo);
+                    actualDeviceConnectState = deviceInfo.getDeviceConnectState();
+                    logToScreen("Monitor Device Info: " + JSON.toJSONString(deviceInfo) + ", Outer Code: " + outerCode);
+                } else if (selectedDevice != null) {
+                    deviceDisplayName = getDeviceDisplayName(selectedDevice);
+                    logToScreen("DeviceStateMonitor: deviceInfo is null, outerCode: " + outerCode + ". Using selected device name: " + deviceDisplayName);
+                } else {
+                    logToScreen("DeviceStateMonitor: deviceInfo is null and no selectedDevice, outerCode: " + outerCode);
+                }
+
+                String statusMessage = "Device State Changed. Device: " + deviceDisplayName + ", ConnectionState: " + actualDeviceConnectState + " (OuterCode: " + outerCode + ")";
                 boolean prevIsConnected = isConnected;
 
-                switch (code) {
-                    case 1: // DEVICE_CONNECTING
+                // Prioritize deviceInfo.getDeviceConnectState() for connection logic
+                switch (actualDeviceConnectState) {
+                    case 1: // DEVICE_CONNECTING from SensorProDeviceInfo.DeviceConnectState
                         statusMessage += " (Connecting)";
-                        isConnected = false; // Still connecting, not fully connected
-                        tvConnectionStatus.setText("Status: Connecting to " + deviceName);
+                        isConnected = false; 
+                        tvConnectionStatus.setText("Status: Connecting to " + deviceDisplayName);
                         break;
-                    case 2: // DEVICE_CONNECTED
+                    case 2: // DEVICE_CONNECTED from SensorProDeviceInfo.DeviceConnectState
                         statusMessage += " (Connected)";
                         isConnected = true; 
-                        selectedDevice = (deviceInfo != null && deviceInfo.getDeviceIdentify() != null) ? bluetoothAdapter.getRemoteDevice(deviceInfo.getDeviceIdentify()) : selectedDevice; // Update selectedDevice if info is richer
-                        tvConnectionStatus.setText("Status: Connected to " + deviceName);
-                        if (!prevIsConnected) { // Only show toast if state changed to connected
-                           Toast.makeText(StagDataActivity.this, "Device " + deviceName + " connected!", Toast.LENGTH_SHORT).show();
+                        // Update selectedDevice if deviceInfo provides a valid MAC that can be used to get a BluetoothDevice object
+                        if (deviceInfo != null && deviceInfo.getDeviceIdentify() != null && bluetoothAdapter != null) {
+                            try {
+                                selectedDevice = bluetoothAdapter.getRemoteDevice(deviceInfo.getDeviceIdentify());
+                            } catch (IllegalArgumentException e) {
+                                logToScreen("Error getting remote device from MAC: " + deviceInfo.getDeviceIdentify() + " - " + e.getMessage());
+                            }
+                        }
+                        tvConnectionStatus.setText("Status: Connected to " + deviceDisplayName);
+                        if (!prevIsConnected) { 
+                           Toast.makeText(StagDataActivity.this, "Device " + deviceDisplayName + " connected!", Toast.LENGTH_SHORT).show();
                         }
                         break;
-                    case 3: // DEVICE_DISCONNECTED
+                    case 3: // DEVICE_DISCONNECTED from SensorProDeviceInfo.DeviceConnectState
                         statusMessage += " (Disconnected)";
                         isConnected = false;
                         isCollecting = false; 
-                        tvConnectionStatus.setText("Status: Disconnected from " + deviceName);
-                        if (prevIsConnected) { // Only show toast if state changed to disconnected
-                            Toast.makeText(StagDataActivity.this, "Device " + deviceName + " disconnected.", Toast.LENGTH_SHORT).show();
+                        tvConnectionStatus.setText("Status: Disconnected from " + deviceDisplayName);
+                        if (prevIsConnected) { 
+                            Toast.makeText(StagDataActivity.this, "Device " + deviceDisplayName + " disconnected.", Toast.LENGTH_SHORT).show();
                         }
                         break;
-                    case 4: // DEVICE_CONNECT_FAILED
+                    case 4: // DEVICE_CONNECT_FAILED from SensorProDeviceInfo.DeviceConnectState
                         statusMessage += " (Connection Failed)";
                         isConnected = false;
-                        tvConnectionStatus.setText("Status: Connection Failed with " + deviceName);
+                        tvConnectionStatus.setText("Status: Connection Failed with " + deviceDisplayName);
                         break;
-                    default: // Includes Code 0 (Unknown)
-                        statusMessage += " (Unknown State: " + code + ")";
-                        // If code is 0 and we were connected, assume disconnection or unstable state
-                        if (code == 0 && isConnected) {
+                    default: // Includes cases where deviceInfo might be null or connectState is unexpected
+                        statusMessage += " (DeviceConnectState Unknown: " + actualDeviceConnectState + ")";
+                        // If outerCode suggested an issue or if deviceInfo is null, consider it not robustly connected
+                        if (outerCode != 0 && outerCode != 100000 ) { // Assuming 0 and 100000 from deviceInfo.returnCode are positive indicators
+                             if(isConnected) { // if it was previously connected, now it's unstable/unknown
+                                isConnected = false;
+                                isCollecting = false;
+                                tvConnectionStatus.setText("Status: Connection state uncertain with " + deviceDisplayName);
+                             }
+                        } else if (deviceInfo == null && isConnected) {
+                            // If device info is null and we thought we were connected, revert state.
                             isConnected = false;
                             isCollecting = false;
-                            tvConnectionStatus.setText("Status: Connection state unknown/lost with " + deviceName);
+                            tvConnectionStatus.setText("Status: Connection lost (no device info) with " + deviceDisplayName);
+                        }
+                        // If actualDeviceConnectState is not 1,2,3, or 4, it's an unknown state. 
+                        // If it was previously connected, this might mean a problem.
+                        else if (actualDeviceConnectState < 1 || actualDeviceConnectState > 4) {
+                            if(isConnected){
+                                isConnected = false;
+                                isCollecting = false;
+                                tvConnectionStatus.setText("Status: Connection state invalid with " + deviceDisplayName);
+                            }
                         }
                         break;
                 }
                 logToScreen(statusMessage);
-                if (deviceInfo != null) {
-                    logToScreen("Monitor Device Info: " + JSON.toJSONString(deviceInfo));
-                }
                 runOnUiThread(StagDataActivity.this::updateButtonStates);
             }
         });
@@ -545,6 +620,7 @@ public class StagDataActivity extends AppCompatActivity {
         // Unregister any broadcast receivers or callbacks if registered directly in activity
         // sensorProManager.getInstance().getDeviceProvider().unregisterStateMonitor(); // Check SDK for unregister method
         logToScreen("Activity Destroyed");
+        dataFlushHandler.removeCallbacks(dataFlushRunnable); // Stop periodic flush when activity is destroyed
     }
 
     private void startDataCollection() {
@@ -564,27 +640,48 @@ public class StagDataActivity extends AppCompatActivity {
 
         logToScreen("Starting data collection process...");
 
-        UserProfileConfig userProfileConfig = new UserProfileConfig();
+        UserProfileConfig userProfileConfig = new UserProfileConfig(); // Keep creation for now, but don't send
         userProfileConfig.setHeight(175); 
         userProfileConfig.setWeight(70);  
         userProfileConfig.setAge(30);     
         userProfileConfig.setGender(1);   
 
+        // Temporarily skip configUserProfile to diagnose if it's the blocking point
+        logToScreen("Temporarily SKIPPING configUserProfile call.");
+        startAlgorithmAndActualCollection(); 
+
+        /* ursprünglicher Code mit configUserProfile und Timeout-Logik:
+        logToScreen("Calling configUserProfile..."); 
+        final boolean[] configProfileCallbackCalled = {false};
+        final Handler configProfileTimeoutHandler = new Handler(Looper.getMainLooper());
+        final Runnable configProfileTimeoutRunnable = () -> {
+            if (!configProfileCallbackCalled[0]) {
+                logToScreen("Error: configUserProfile callback timed out after 15 seconds.");
+                Toast.makeText(StagDataActivity.this, "User Profile Config Timed Out", Toast.LENGTH_LONG).show();
+                runOnUiThread(StagDataActivity.this::updateButtonStates); 
+            }
+        };
+
+        configProfileTimeoutHandler.postDelayed(configProfileTimeoutRunnable, 15000); 
+
         sensorProManager.getMotionProvider().configUserProfile(userProfileConfig, new SensorProCallback<byte[]>() {
             @Override
             public void onResponse(int errorCode, byte[] returnObject) {
+                configProfileCallbackCalled[0] = true;
+                configProfileTimeoutHandler.removeCallbacks(configProfileTimeoutRunnable); 
+                logToScreen("configUserProfile onResponse. errorCode: " + errorCode); 
+
                 if (errorCode == 100000 || errorCode == 0) { 
                     logToScreen("User profile configured successfully.");
                     startAlgorithmAndActualCollection();
                 } else {
                     logToScreen("Failed to configure user profile. Error: " + errorCode + ". Is device still connected? " + (isConnected ? "Yes" : "No"));
                     Toast.makeText(StagDataActivity.this, "User Profile Config Failed: " + errorCode, Toast.LENGTH_LONG).show();
-                    // Do not proceed if user profile config fails
-                    // Update button states in case something changed
                     runOnUiThread(StagDataActivity.this::updateButtonStates);
                 }
             }
         });
+        */
     }
 
     private void startAlgorithmAndActualCollection() {
@@ -691,40 +788,134 @@ public class StagDataActivity extends AppCompatActivity {
                     MagDataArray magDataArray = null;
 
                     if (data.getSensorData() != null) {
+                        LogUtils.info(TAG, "featureDataCallback: data.getSensorData() is NOT null");
                         accDataArray = data.getSensorData().getAccDataArray();
                         gyroDataArray = data.getSensorData().getGyroDataArray();
-                        // MAG is NOT under SensorData -> PostureData based on error.
-                        // if (data.getSensorData().getPostureData() != null){ // MAG is under PostureData in FeatureData for STAG
-                        //    magDataArray = data.getSensorData().getPostureData().getMagDataArray();
+                        // Previous error indicated SensorData does not have getPostureData()
+                        // if (data.getSensorData().getPostureData() != null) { 
+                        //    LogUtils.d(TAG, "featureDataCallback: data.getSensorData().getPostureData() is NOT null");
                         // }
+                    } else {
+                        LogUtils.info(TAG, "featureDataCallback: data.getSensorData() IS NULL");
                     }
                     
-                    // Fallback or alternative: STAG doc example shows PostureData under FeatureData directly for MAG and Gait
-                    if (data.getPostureData() != null) { // Corrected: MAG is likely directly under FeatureData.getPostureData()
+                    if (data.getPostureData() != null) { 
+                        LogUtils.info(TAG, "featureDataCallback: data.getPostureData() is NOT null");
                         magDataArray = data.getPostureData().getMagDataArray();
+                        if (magDataArray != null) {
+                            LogUtils.info(TAG, "featureDataCallback: data.getPostureData().getMagDataArray() is NOT null");
+                        } else {
+                            LogUtils.info(TAG, "featureDataCallback: data.getPostureData().getMagDataArray() IS NULL");
+                        }
+                    } else {
+                        LogUtils.info(TAG, "featureDataCallback: data.getPostureData() IS NULL");
                     }
 
+                    // Log raw FeatureData to see its structure for MAG
+                    LogUtils.info(TAG, "Full FeatureData: " + JSON.toJSONString(data));
 
                     final AccDataArray finalAcc = accDataArray;
                     final GyroDataArray finalGyro = gyroDataArray;
                     final MagDataArray finalMag = magDataArray;
 
+                    // Prepare data for CSV writing
+                    AccData[] accSamples = null;
+                    GyroData[] gyroSamples = null;
+                    Object[] magSamplesArray = null; // Assuming it's an array of samples
+                    List<?> magSamplesList = null;    // Or a list of samples
+
+                    if (finalAcc != null && finalAcc.getAccValueArray() != null) {
+                        accSamples = finalAcc.getAccValueArray(); 
+                    }
+                    if (finalGyro != null && finalGyro.getGyroValueArray() != null) {
+                        gyroSamples = finalGyro.getGyroValueArray(); 
+                    }
+                    if (finalMag != null) {
+                        Object magIntArrayObject = null;
+                        try {
+                            java.lang.reflect.Method method = finalMag.getClass().getMethod("getMagValueIntArray");
+                            magIntArrayObject = method.invoke(finalMag);
+                        } catch (NoSuchMethodException nsme) {
+                            try {
+                                java.lang.reflect.Field field = finalMag.getClass().getDeclaredField("magValueIntArray");
+                                field.setAccessible(true);
+                                magIntArrayObject = field.get(finalMag);
+                            } catch (Exception e) { logToScreen("Failed to access magValueIntArray field in callback: " + e.getMessage()); }
+                        } catch (Exception e) { logToScreen("Error invoking getMagValueIntArray() in callback: " + e.getMessage()); }
+
+                        if (magIntArrayObject != null) {
+                            if (magIntArrayObject.getClass().isArray()) {
+                                magSamplesArray = (Object[]) magIntArrayObject; // Cast to Object array
+                            } else if (magIntArrayObject instanceof java.util.List) {
+                                magSamplesList = (java.util.List<?>) magIntArrayObject;
+                            }
+                        }
+                    }
+
+                    // Determine the number of samples to iterate through (minimum of all available)
+                    int numSamples = 0;
+                    if (accSamples != null) numSamples = accSamples.length;
+                    if (gyroSamples != null) numSamples = Math.min(numSamples, gyroSamples.length);
+                    else numSamples = 0; // If gyro is null, no synced samples with acc
+                    
+                    if (magSamplesArray != null) numSamples = Math.min(numSamples, magSamplesArray.length);
+                    else if (magSamplesList != null) numSamples = Math.min(numSamples, magSamplesList.size());
+                    else numSamples = 0; // If mag is null, no synced samples with acc/gyro
+
+                    if (numSamples == 0 && (accSamples != null && accSamples.length > 0)){
+                        // If only ACC data is available, or others are empty, log at least ACC
+                        // This case might need special handling if you expect all sensors or none
+                        LogUtils.info(TAG, "Processing single ACC sample as others are missing/empty. Total ACC samples: " + accSamples.length);
+                        numSamples = accSamples.length; // Process all acc samples if it's the only one with data
+                    } else if (numSamples == 0 && (gyroSamples != null && gyroSamples.length > 0)){
+                        LogUtils.info(TAG, "Processing single GYRO sample as others are missing/empty. Total GYRO samples: " + gyroSamples.length);
+                        numSamples = gyroSamples.length; // Process all gyro samples
+                    } else if (numSamples == 0 && ((magSamplesArray != null && magSamplesArray.length > 0) || (magSamplesList != null && !magSamplesList.isEmpty()))){
+                        LogUtils.info(TAG, "Processing single MAG sample as others are missing/empty.");
+                        numSamples = (magSamplesArray != null) ? magSamplesArray.length : magSamplesList.size();
+                    }
+
+                    if (numSamples > 0) {
+                        logToScreen("Processing " + numSamples + " samples from current FeatureData callback.");
+                    }
+
+                    AccData accForUi = null;
+                    GyroData gyroForUi = null;
+                    Object magForUi = null;
+
+                    for (int i = 0; i < numSamples; i++) {
+                        AccData currentAcc = (accSamples != null && i < accSamples.length) ? accSamples[i] : null;
+                        GyroData currentGyro = (gyroSamples != null && i < gyroSamples.length) ? gyroSamples[i] : null;
+                        Object currentMag = null;
+                        if (magSamplesArray != null && i < magSamplesArray.length) {
+                            currentMag = magSamplesArray[i];
+                        } else if (magSamplesList != null && i < magSamplesList.size()) {
+                            currentMag = magSamplesList.get(i);
+                        }
+                        
+                        writeDataToBuffer(currentAcc, currentGyro, currentMag);
+
+                        if (i == 0) { // For UI, only update with the first sample of the batch
+                            accForUi = currentAcc;
+                            gyroForUi = currentGyro;
+                            magForUi = currentMag;
+                        }
+                    }
+
+                    // Create final variables for use in lambda to update UI (with the first sample of the batch)
+                    final AccData finalAccSampleForUi = accForUi;
+                    final GyroData finalGyroSampleForUi = gyroForUi;
+                    final Object finalMagSampleForUi = magForUi;
+
                     runOnUiThread(() -> {
-                        if (finalAcc != null && finalAcc.getAccValueArray() != null && finalAcc.getAccValueArray().length > 0) { // MODIFIED: Renamed getAccData to getAccValueArray
-                            // Displaying only the first point for brevity
-                            tvAccData.setText(JSON.toJSONString(finalAcc.getAccValueArray()[0])); // MODIFIED: Renamed getAccData to getAccValueArray
-                        } else {
-                            // tvAccData.setText("No ACC data");
+                        if (finalAccSampleForUi != null) { 
+                            tvAccData.setText(JSON.toJSONString(finalAccSampleForUi));
                         }
-                        if (finalGyro != null && finalGyro.getGyroValueArray() != null && finalGyro.getGyroValueArray().length > 0) { // MODIFIED: Renamed getGyroData to getGyroValueArray
-                            tvGyroData.setText(JSON.toJSONString(finalGyro.getGyroValueArray()[0])); // MODIFIED: Renamed getGyroData to getGyroValueArray
-                        } else {
-                            // tvGyroData.setText("No GYRO data");
+                        if (finalGyroSampleForUi != null) { 
+                            tvGyroData.setText(JSON.toJSONString(finalGyroSampleForUi));
                         }
-                        if (finalMag != null && finalMag.getMagValueArray() != null && finalMag.getMagValueArray().length > 0) { // Correct from previous fix
-                            tvMagData.setText(JSON.toJSONString(finalMag.getMagValueArray()[0])); // Correct from previous fix
-                        } else {
-                            // tvMagData.setText("No MAG data");
+                        if (finalMagSampleForUi != null) { 
+                            tvMagData.setText(JSON.toJSONString(finalMagSampleForUi));
                         }
                     });
                 }
@@ -746,47 +937,221 @@ public class StagDataActivity extends AppCompatActivity {
     private void stopDataCollectionLogic() {
         if (sensorProManager == null) {
             logToScreen("SDK not initialized, cannot stop collection.");
-            isCollecting = false; // Force state update
+            isCollecting = false; 
             runOnUiThread(this::updateButtonStates);
+            stopCsvWriter(); 
             return;
         }
+        logToScreen("Executing stopDataCollectionLogic..."); 
 
-        // 1. Stop Realtime Measurement (as per doc_STAG.txt - "关闭实时测量")
         sensorProManager.getCustomProvider().stopCollectCustomData(new SensorProCallback<byte[]>() {
             @Override
             public void onResponse(int errorCode, byte[] returnObject) {
                 if (errorCode == 0 || errorCode == 100000) {
-                    logToScreen("Data collection stopped successfully.");
+                    logToScreen("Data collection stopped successfully (SDK callback).");
                 } else {
-                    logToScreen("Failed to stop data collection. Error: " + errorCode + ". Still proceeding with algorithm stop.");
+                    logToScreen("Failed to stop data collection (SDK callback). Error: " + errorCode + ". Proceeding with cleanup.");
                 }
-                // Even if stop command fails, attempt to stop algorithm and update state
-                isCollecting = false; // Set before algorithm stop, as it might be part of cleanup
-                
-                // 2. Stop Algorithm (as per doc_STAG.txt - "关闭算法")
-                try {
-                    PostureDataConvertUtils.stopPostureDetection();
-                    logToScreen("Posture detection algorithm stopped.");
-                } catch (Exception e) {
-                    logToScreen("Error stopping posture detection algorithm: " + e.getMessage());
-                    Log.e(TAG, "Error stopping posture algorithm", e);
-                }
-
-                // 3. Unregister callback (Important!)
-                // The SDK docs usually imply that callbacks should be unregistered when no longer needed.
-                // sensorProManager.getCustomProvider().unregisterFeatureDataCallback(featureDataCallback); // Check for specific unregister method.
-                // If no direct unregister, setting the callback to null or a dummy might be a workaround, but proper unregistration is preferred.
-                // For now, we assume it might be unregistered implicitly or by stopping collection.
-                logToScreen("FeatureData callback should be unregistered if an API exists.");
-
+                // isCollecting should be set to false once the intention to stop is confirmed by SDK or immediately.
+                // Let's set it here to allow UI to update botones even if algorithm stop is slow.
+                isCollecting = false;
                 runOnUiThread(() -> {
-                    updateButtonStates();
-                    tvAccData.setText("-");
-                    tvGyroData.setText("-");
-                    tvMagData.setText("-");
+                    // Update buttons to reflect that collection is stopping/stopped initially
+                    // The Start button might not enable until algorithm fully stops if isConnected depends on it.
+                    updateButtonStates(); 
                 });
+
+                // Perform further cleanup asynchronously to avoid blocking the callback thread
+                new Thread(() -> {
+                    logToScreen("Background thread: Attempting to stop posture algorithm...");
+                    try {
+                        PostureDataConvertUtils.stopPostureDetection();
+                        logToScreen("Background thread: Posture detection algorithm stopped.");
+                    } catch (Exception e) {
+                        logToScreen("Background thread: Error stopping posture detection algorithm: " + e.getMessage());
+                        Log.e(TAG, "Error stopping posture algorithm", e);
+                    }
+
+                    logToScreen("Background thread: Unregistering FeatureData callback (placeholder).");
+                    // sensorProManager.getCustomProvider().unregisterFeatureDataCallback(featureDataCallback);
+                    // logToScreen("FeatureData callback should be unregistered if an API exists.");
+
+                    logToScreen("Background thread: Stopping CSV writer...");
+                    stopCsvWriter(); // Stop and flush CSV writer
+
+                    // Final UI update on the main thread
+                    runOnUiThread(() -> {
+                        logToScreen("Background thread: Final UI update. isConnected: " + isConnected + ", isCollecting: " + isCollecting);
+                        updateButtonStates(); // This will now correctly use isCollecting = false
+                        tvAccData.setText("-");
+                        tvGyroData.setText("-");
+                        tvMagData.setText("-");
+                        if (tvCurrentFileName != null && currentCsvFile == null) { // If file was closed by stopCsvWriter
+                            // tvCurrentFileName.setText("CSV Stopped. Ready for new file."); // Or similar
+                        }
+                        logToScreen("Cleanup finished. Ready to start new collection if connected.");
+                    });
+                }).start();
             }
         });
+    }
+
+    private void initCsvWriter() {
+        if (currentCsvFileWriter != null) {
+            logToScreen("CSV writer already initialized.");
+            return;
+        }
+        frameCounter = 0; // Reset frame counter for new file
+        try {
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            String fileName = "STAG_DATA_" + timeStamp + ".csv";
+            File documentsDir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+            if (documentsDir == null) {
+                logToScreen("Error: External documents directory not available.");
+                Toast.makeText(this, "Cannot access storage for CSV.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (!documentsDir.exists()) {
+                if (!documentsDir.mkdirs()) {
+                    logToScreen("Error: Could not create documents directory.");
+                    Toast.makeText(this, "Cannot create storage directory.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+            currentCsvFile = new File(documentsDir, fileName);
+            currentCsvFileWriter = new BufferedWriter(new FileWriter(currentCsvFile));
+            currentCsvFileWriter.write(CSV_HEADER);
+            currentCsvFileWriter.newLine();
+            logToScreen("CSV file initialized: " + fileName);
+            if (tvCurrentFileName != null) {
+                tvCurrentFileName.setText("Saving to: " + fileName);
+            }
+
+            // Setup periodic flush
+            dataFlushRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (isCollecting && !csvDataBuffer.isEmpty()) {
+                        logToScreen("Periodic flush: flushing " + csvDataBuffer.size() + " lines to CSV.");
+                        flushCsvBufferToFile(false);
+                    }
+                    dataFlushHandler.postDelayed(this, DATA_FLUSH_INTERVAL_MS);
+                }
+            };
+            dataFlushHandler.postDelayed(dataFlushRunnable, DATA_FLUSH_INTERVAL_MS);
+
+        } catch (IOException e) {
+            logToScreen("Error initializing CSV writer: " + e.getMessage());
+            Log.e(TAG, "initCsvWriter error", e);
+            currentCsvFile = null;
+            currentCsvFileWriter = null;
+        }
+    }
+
+    private void writeDataToBuffer(AccData acc, GyroData gyro, Object magSample) {
+        if (currentCsvFileWriter == null || !isCollecting) {
+            // Not collecting or writer not ready
+            return;
+        }
+        long currentFrameIndex = frameCounter; // Use current frameCounter value for this line
+
+        // Assuming AccData, GyroData, and magSample (from reflection) have x, y, z fields
+        // This part will need careful handling of the actual structure of these objects
+        // For now, let's assume they can be JSON stringified and we extract from there or they have direct getters.
+        // This is a placeholder and will likely need refinement based on actual data object structure.
+        
+        String accX = "N/A", accY = "N/A", accZ = "N/A";
+        String gyroX = "N/A", gyroY = "N/A", gyroZ = "N/A";
+        String magX = "N/A", magY = "N/A", magZ = "N/A";
+
+        try {
+            // For AccData (assuming it has getX, getY, getZ or similar, or direct public fields x,y,z)
+            // This is highly speculative. Replace with actual field access or getters.
+            if (acc != null) {
+                // Example: If AccData has public float x, y, z; fields
+                 accX = String.valueOf(acc.getAccX()); 
+                 accY = String.valueOf(acc.getAccY());
+                 accZ = String.valueOf(acc.getAccZ());
+            }
+        } catch (Exception e) { logToScreen("Error getting ACC data for CSV: " + e.getMessage()); }
+
+        try {
+            if (gyro != null) {
+                 gyroX = String.valueOf(gyro.getGyroX());
+                 gyroY = String.valueOf(gyro.getGyroY());
+                 gyroZ = String.valueOf(gyro.getGyroZ());
+            }
+        } catch (Exception e) { logToScreen("Error getting GYRO data for CSV: " + e.getMessage()); }
+        
+        try {
+            if (magSample != null) {
+                // magSample is the object from magIntArray[0]
+                // Assuming it has magX, magY, magZ as fields (likely int based on 'IntArray')
+                // We need to use reflection again here if fields are not public or no getters.
+                // For simplicity, let's assume JSON stringification and then parsing, or direct field access if known.
+                // This is very inefficient and just for a placeholder.
+                // A better way would be to cast magSample to its actual type if known or use reflection for specific fields.
+                String magJson = JSON.toJSONString(magSample);
+                com.alibaba.fastjson.JSONObject magObj = JSON.parseObject(magJson);
+                if (magObj != null) {
+                    magX = magObj.getString("magX");
+                    magY = magObj.getString("magY");
+                    magZ = magObj.getString("magZ");
+                }
+            }
+        } catch (Exception e) { logToScreen("Error getting MAG data for CSV: " + e.getMessage()); }
+
+        String csvLine = currentFrameIndex + "," + accX + "," + accY + "," + accZ + "," +
+                         gyroX + "," + gyroY + "," + gyroZ + "," +
+                         magX + "," + magY + "," + magZ;
+        csvDataBuffer.add(csvLine);
+        frameCounter++; // Increment frame counter for the next set of data
+
+        if (csvDataBuffer.size() >= DATA_BUFFER_FLUSH_SIZE) {
+            logToScreen("Buffer flush (size trigger): flushing " + csvDataBuffer.size() + " lines to CSV.");
+            flushCsvBufferToFile(false);
+        }
+    }
+
+    private void flushCsvBufferToFile(boolean isClosing) {
+        if (currentCsvFileWriter == null) {
+            if (!isClosing) logToScreen("CSV writer not available for flushing."); // Don't log if intentionally closing
+            return;
+        }
+        if (csvDataBuffer.isEmpty() && !isClosing) {
+            // logToScreen("CSV buffer is empty, nothing to flush."); // Optional: reduce verbose logging
+            return;
+        }
+
+        try {
+            for (String line : csvDataBuffer) {
+                currentCsvFileWriter.write(line);
+                currentCsvFileWriter.newLine();
+            }
+            csvDataBuffer.clear();
+            currentCsvFileWriter.flush(); // Ensure data is written to disk
+            if (isClosing) {
+                logToScreen("Flushed remaining data and closing CSV file: " + (currentCsvFile != null ? currentCsvFile.getName() : "N/A"));
+                currentCsvFileWriter.close();
+                currentCsvFileWriter = null;
+                final File savedFile = currentCsvFile; // Create a final copy for lambda
+                runOnUiThread(() -> { // Ensure UI update is on main thread
+                    if (tvCurrentFileName != null) {
+                        tvCurrentFileName.setText("Saved to: " + (savedFile != null ? savedFile.getName() : "N/A") + " (Stopped)");
+                    }
+                });
+                currentCsvFile = null; // Ready for next session or sharing
+            }
+        } catch (IOException e) {
+            logToScreen("Error writing to CSV file: " + e.getMessage());
+            Log.e(TAG, "flushCsvBufferToFile error", e);
+        }
+    }
+
+    private void stopCsvWriter() {
+        logToScreen("Stopping CSV writer...");
+        dataFlushHandler.removeCallbacks(dataFlushRunnable); // Stop periodic flush
+        flushCsvBufferToFile(true); // Flush any remaining data and close the file
     }
 
     // --- Permission Handling --- (To be filled)

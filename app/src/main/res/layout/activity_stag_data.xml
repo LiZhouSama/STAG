@@ -111,6 +111,12 @@
                 android:layout_marginTop="8dp"
                 android:minLines="5"
                 android:text="Log:" />
+                <TextView
+                android:id="@+id/tvCurrentFileName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="CSV File: N/A" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout> 
