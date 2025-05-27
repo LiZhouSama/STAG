@@ -34,6 +34,12 @@ android {
     packagingOptions {
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
     }
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1" // Specify CMake version (matches CMakeLists.txt or higher)
+        }
+    }
 }
 
 configurations {

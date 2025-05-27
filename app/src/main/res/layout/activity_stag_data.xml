@@ -57,6 +57,7 @@
     </LinearLayout>
 
     <ScrollView
+        android:id="@+id/scrollViewLogs"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -70,53 +71,61 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ACC Data:" 
+                android:text="Linear Acc Data (m/s²):"
                 android:textStyle="bold"/>
             <TextView
-                android:id="@+id/tvAccData"
+                android:id="@+id/tvLinAccData"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minLines="3"
-                android:text="-" />
+                android:minLines="1"
+                android:text="LinAcc: -" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="GYRO Data:"
+                android:text="Orientation (Euler Deg R,P,Y):"
                 android:textStyle="bold" />
             <TextView
-                android:id="@+id/tvGyroData"
+                android:id="@+id/tvOrientationData"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minLines="3"
-                android:text="-" />
+                android:minLines="1"
+                android:text="Orientation: -" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="MAG Data:"
+                android:text="Raw MAG Data (µT):"
                 android:textStyle="bold" />
             <TextView
                 android:id="@+id/tvMagData"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minLines="3"
-                android:text="-" />
-              <TextView
-                android:id="@+id/tvLogOutput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:minLines="5"
-                android:text="Log:" />
-                <TextView
+                android:minLines="1"
+                android:text="RawMag: -" />
+
+            <TextView
                 android:id="@+id/tvCurrentFileName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="12dp"
                 android:text="CSV File: N/A" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Log:"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvLogOutput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minLines="5"
+                android:text="" />
+
         </LinearLayout>
     </ScrollView>
 </LinearLayout> 

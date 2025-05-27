@@ -10,6 +10,8 @@
 # 规则4：保留 app/src/main/java/com/example/stag/ 目录下的所有文件和子目录内容
 # (注意: 这需要该路径下的父目录通过规则2不被忽略)
 !app/src/main/java/com/example/stag/**
+# 规则4.1: 保留 app/src/main/cpp/ 目录下的所有文件和子目录内容
+!app/src/main/cpp/**
 
 # 规则5：保留所有 .xml 文件 (例如布局文件、AndroidManifest.xml, values下的xml等)
 !*.xml
